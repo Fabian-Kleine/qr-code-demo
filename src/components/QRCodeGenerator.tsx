@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "react-qrcode-logo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -11,6 +11,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Toggle } from "@/components/ui/toggle";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Check, ClipboardCopy, Download, Link2, RefreshCcw } from "lucide-react";
 
 export function QRCodeGenerator() {
   const [value, setValue] = useState("https://github.com/gcoro/react-qrcode-logo");
@@ -19,6 +22,9 @@ export function QRCodeGenerator() {
   const [bgColor, setBgColor] = useState("#ffffff");
   const [fgColor, setFgColor] = useState("#000000");
   const [logoImage, setLogoImage] = useState("");
+  const logoFileInputRef = useRef<HTMLInputElement | null>(null);
+  const logoObjectUrlRef = useRef<string | null>(null);
+  const [syncLogoSize, setSyncLogoSize] = useState(false);
   const [logoWidth, setLogoWidth] = useState(50);
   const [logoHeight, setLogoHeight] = useState(50);
   const [logoOpacity, setLogoOpacity] = useState(1);
@@ -31,6 +37,60 @@ export function QRCodeGenerator() {
   const [logoPadding, setLogoPadding] = useState(0);
   const [logoPaddingStyle, setLogoPaddingStyle] = useState<"square" | "circle">("square");
   const [logoPaddingRadius, setLogoPaddingRadius] = useState(0);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copying" | "copied" | "error">(
+    "idle",
+  );
+  const copyStatusTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (logoObjectUrlRef.current) {
+        URL.revokeObjectURL(logoObjectUrlRef.current);
+        logoObjectUrlRef.current = null;
+      }
+
+      if (copyStatusTimeoutRef.current !== null) {
+        window.clearTimeout(copyStatusTimeoutRef.current);
+        copyStatusTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const setLogoFromFile = (file: File | null) => {
+    if (!file) return;
+
+    if (logoObjectUrlRef.current) {
+      URL.revokeObjectURL(logoObjectUrlRef.current);
+      logoObjectUrlRef.current = null;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    logoObjectUrlRef.current = objectUrl;
+    setLogoImage(objectUrl);
+  };
+
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setLogoFromFile(file);
+  };
+
+  const handleLogoUrlChange = (nextUrl: string) => {
+    if (logoObjectUrlRef.current) {
+      URL.revokeObjectURL(logoObjectUrlRef.current);
+      logoObjectUrlRef.current = null;
+    }
+    setLogoImage(nextUrl);
+  };
+
+  const handleLogoWidthChange = (nextWidth: number) => {
+    setLogoWidth(nextWidth);
+    if (syncLogoSize) setLogoHeight(nextWidth);
+  };
+
+  const handleLogoHeightChange = (nextHeight: number) => {
+    setLogoHeight(nextHeight);
+    if (syncLogoSize) setLogoWidth(nextHeight);
+  };
 
   const handleDownload = () => {
     const canvas = document.getElementById("react-qrcode-logo") as HTMLCanvasElement;
@@ -43,6 +103,65 @@ export function QRCodeGenerator() {
       a.click();
       document.body.removeChild(a);
     }
+  };
+
+  const handleCopy = async () => {
+    const canvas = document.getElementById("react-qrcode-logo") as HTMLCanvasElement;
+    if (canvas) {
+      setCopyStatus("copying");
+      if (copyStatusTimeoutRef.current !== null) {
+        window.clearTimeout(copyStatusTimeoutRef.current);
+        copyStatusTimeoutRef.current = null;
+      }
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          setCopyStatus("error");
+          copyStatusTimeoutRef.current = window.setTimeout(
+            () => setCopyStatus("idle"),
+            2500,
+          );
+          return;
+        }
+
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          setCopyStatus("copied");
+          copyStatusTimeoutRef.current = window.setTimeout(
+            () => setCopyStatus("idle"),
+            2000,
+          );
+        } catch {
+          setCopyStatus("error");
+          copyStatusTimeoutRef.current = window.setTimeout(
+            () => setCopyStatus("idle"),
+            2500,
+          );
+        }
+      }, "image/png");
+    }
+  };
+
+  const handleReset = () => {
+    setValue("");
+    setSize(250);
+    setQuietZone(10);
+    setBgColor("#ffffff");
+    setFgColor("#000000");
+    handleLogoUrlChange("");
+    setLogoWidth(50);
+    setLogoHeight(50);
+    setLogoOpacity(1);
+    setEcLevel("M");
+    setQrStyle("squares");
+    setEyeRadius(0);
+    setEyeColor("");
+    setEnableCORS(false);
+    setRemoveQrCodeBehindLogo(false);
+    setLogoPadding(0);
+    setLogoPaddingStyle("square");
+    setLogoPaddingRadius(0);
+    setCopyStatus("idle");
   };
 
   return (
@@ -98,7 +217,7 @@ export function QRCodeGenerator() {
                     type="color"
                     value={bgColor}
                     onChange={(e) => setBgColor(e.target.value)}
-                    className="w-12 p-1 h-9"
+                    className="w-9 p-1"
                   />
                   <Input
                     value={bgColor}
@@ -114,7 +233,7 @@ export function QRCodeGenerator() {
                     type="color"
                     value={fgColor}
                     onChange={(e) => setFgColor(e.target.value)}
-                    className="w-12 p-1 h-9"
+                    className="w-9 p-1"
                   />
                   <Input
                     value={fgColor}
@@ -131,32 +250,76 @@ export function QRCodeGenerator() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
+                <Label>Upload Logo</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => logoFileInputRef.current?.click()}
+                  >
+                    Upload image
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleLogoUrlChange("")}
+                    disabled={!logoImage}
+                  >
+                    Clear
+                  </Button>
+                  <input
+                    ref={logoFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleLogoFileChange}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="logoImage">Logo URL</Label>
                 <Input
                   id="logoImage"
                   value={logoImage}
-                  onChange={(e) => setLogoImage(e.target.value)}
+                  onChange={(e) => handleLogoUrlChange(e.target.value)}
                   placeholder="https://example.com/logo.png"
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="logoWidth">Logo Width</Label>
-                  <Input
-                    id="logoWidth"
-                    type="number"
-                    value={logoWidth}
-                    onChange={(e) => setLogoWidth(Number(e.target.value))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="logoHeight">Logo Height</Label>
-                  <Input
-                    id="logoHeight"
-                    type="number"
-                    value={logoHeight}
-                    onChange={(e) => setLogoHeight(Number(e.target.value))}
-                  />
+                <div className="md:col-span-2 grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="logoWidth">Logo Width</Label>
+                    <Input
+                      id="logoWidth"
+                      type="number"
+                      value={logoWidth}
+                      onChange={(e) => handleLogoWidthChange(Number(e.target.value))}
+                    />
+                  </div>
+
+                  <Toggle
+                    id="syncLogoSize"
+                    variant="outline"
+                    pressed={syncLogoSize}
+                    onPressedChange={(pressed) => {
+                      setSyncLogoSize(pressed);
+                      if (pressed) setLogoHeight(logoWidth);
+                    }}
+                    aria-label="Sync logo width and height"
+                    title="Sync logo width and height"
+                  >
+                    <Link2 className="size-4" />
+                  </Toggle>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="logoHeight">Logo Height</Label>
+                    <Input
+                      id="logoHeight"
+                      type="number"
+                      value={logoHeight}
+                      onChange={(e) => handleLogoHeightChange(Number(e.target.value))}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="logoOpacity">Logo Opacity (0-1)</Label>
@@ -170,6 +333,7 @@ export function QRCodeGenerator() {
                     onChange={(e) => setLogoOpacity(Number(e.target.value))}
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="logoPadding">Logo Padding</Label>
                   <Input
@@ -185,7 +349,7 @@ export function QRCodeGenerator() {
                     value={logoPaddingStyle}
                     onValueChange={(val) => val && setLogoPaddingStyle(val)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -203,13 +367,13 @@ export function QRCodeGenerator() {
                     onChange={(e) => setLogoPaddingRadius(Number(e.target.value))}
                   />
                 </div>
-                <div className="flex items-center space-x-2 pt-8">
-                   <Input
+                <div className="flex items-center space-x-2">
+                  <Checkbox
                     id="removeQrCodeBehindLogo"
-                    type="checkbox"
-                    className="h-4 w-4"
                     checked={removeQrCodeBehindLogo}
-                    onChange={(e) => setRemoveQrCodeBehindLogo(e.target.checked)}
+                    onCheckedChange={(checked) =>
+                      setRemoveQrCodeBehindLogo(checked === true)
+                    }
                   />
                   <Label htmlFor="removeQrCodeBehindLogo">Remove QR Code Behind Logo</Label>
                 </div>
@@ -228,7 +392,7 @@ export function QRCodeGenerator() {
                   value={qrStyle}
                   onValueChange={(val) => val && setQrStyle(val)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -244,7 +408,7 @@ export function QRCodeGenerator() {
                   value={ecLevel}
                   onValueChange={(val) => val && setEcLevel(val)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -272,7 +436,7 @@ export function QRCodeGenerator() {
                     type="color"
                     value={eyeColor || fgColor}
                     onChange={(e) => setEyeColor(e.target.value)}
-                    className="w-12 p-1 h-9"
+                    className="w-9 p-1"
                   />
                   <Input
                     value={eyeColor}
@@ -281,14 +445,12 @@ export function QRCodeGenerator() {
                   />
                 </div>
               </div>
-              <div className="flex items-center space-x-2 pt-8">
-                <Input
-                    id="enableCORS"
-                    type="checkbox"
-                    className="h-4 w-4"
-                    checked={enableCORS}
-                    onChange={(e) => setEnableCORS(e.target.checked)}
-                  />
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="enableCORS"
+                  checked={enableCORS}
+                  onCheckedChange={(checked) => setEnableCORS(checked === true)}
+                />
                 <Label htmlFor="enableCORS">Enable CORS</Label>
               </div>
             </CardContent>
@@ -327,9 +489,35 @@ export function QRCodeGenerator() {
                   />
                 </div>
                 <Button onClick={handleDownload} className="w-full">
+                  <Download />
                   Download PNG
                 </Button>
               </CardContent>
+              <CardFooter className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleCopy}
+                  className="flex-1"
+                  disabled={copyStatus === "copying"}
+                >
+                  {copyStatus === "copied" ? (
+                    <Check />
+                  ) : (
+                    <ClipboardCopy />
+                  )}
+                  {copyStatus === "copied"
+                    ? "Copied!"
+                    : copyStatus === "error"
+                      ? "Copy failed"
+                      : copyStatus === "copying"
+                        ? "Copying…"
+                        : "Copy PNG to Clipboard"}
+                </Button>
+                <Button variant="outline" onClick={handleReset} className="flex-1">
+                  <RefreshCcw />
+                  Reset to Defaults
+                </Button>
+              </CardFooter>
             </Card>
           </div>
         </div>

@@ -1,7 +1,7 @@
-import { ComponentExample } from "@/components/component-example";
+import { QRCodeGenerator } from "@/components/QRCodeGenerator";
 
 export function App() {
-return <ComponentExample />;
+  return <QRCodeGenerator />;
 }
 
 export default App;
